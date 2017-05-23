@@ -8,7 +8,7 @@ class Parser
 
     preg_quote = (str) -> str.replace /[-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g, "\\$&"
 
-    
+
     str_replace = (search, replace, str) ->
         if search instanceof Array
             if replace instanceof Array
@@ -63,7 +63,7 @@ class Parser
         else
             result.push v for _, v of arr
         result
-    
+
     # end php function wrappers
 
 
@@ -74,7 +74,7 @@ class Parser
         @hooks = {}
         @html = no
 
-    
+
     # parse markdown text
     makeHtml: (text) ->
         @footnotes = []
@@ -92,12 +92,12 @@ class Parser
 
     enableHtml: (@html = yes) ->
 
-    
+
     hook: (type, cb) ->
         @hooks[type] = [] if not @hooks[type]?
         @hooks[type].push cb
 
-    
+
     makeHolder: (str) ->
         key = "|\r" + @uniqid + @id + "\r|"
         @id += 1
@@ -110,7 +110,7 @@ class Parser
         text.replace /\t/g, '    '
             .replace /\r/g, ''
 
-    
+
     makeFootnotes: (html) ->
         if @footnotes.length > 0
             html += '<div class="footnotes"><hr><ol>'
@@ -177,7 +177,7 @@ class Parser
 
     # parse inline
     parseInline: (text, whiteList = '', clearHolders = yes, enableAutoLink = yes) ->
-        text = @call 'beforeParseInline', text 
+        text = @call 'beforeParseInline', text
 
         # code
         text = text.replace /(^|[^\\])(`+)(.+?)\2/mg, (matches...) =>
@@ -188,7 +188,7 @@ class Parser
             escaped = htmlspecialchars matches[1]
             escaped = escaped.replace /\$/g, '&dollar;'
             @makeHolder escaped
-        
+
         # link
         text = text.replace /<(https?:\/\/.+)>/ig, (matches...) =>
             url = @cleanUrl matches[1]
@@ -220,12 +220,24 @@ class Parser
             escaped = htmlspecialchars @escapeBracket matches[1]
             url = @escapeBracket matches[2]
             url = @cleanUrl url
-            @makeHolder "<img src=\"#{url}\" alt=\"#{escaped}\" title=\"#{escaped}\">"
+            extra = @parseExtra url
+            if extra?
+                styles = []
+                styles.push "width:#{extra.width};" if extra?.width
+                styles.push "height:#{extra.height};" if extra?.height
+            style = if styles? then ' style="' + (styles.join ' ') + '"' else ''
+            @makeHolder "<img src=\"#{url}\" alt=\"#{escaped}\" title=\"#{escaped}\"#{style}>"
 
         text = text.replace /!\[((?:[^\]]|\\\]|\\\[)*?)\]\[((?:[^\]]|\\\]|\\\[)+?)\]/g, (matches...) =>
             escaped = htmlspecialchars @escapeBracket matches[1]
+            if @definitions[matches[2]]?
+                extra = @definitions[matches[2]].extra
+                styles = []
+                styles.push "width:#{extra.width};" if extra?.width
+                styles.push "height:#{extra.height};" if extra?.height
+            style = if styles? then ' style="' + (styles.join ' ') + '"' else ''
 
-            result = if @definitions[matches[2]]? then "<img src=\"#{@definitions[matches[2]]}\" alt=\"#{escaped}\" title=\"#{escaped}\">" else escaped
+            result = if @definitions[matches[2]]? then "<img src=\"#{@definitions[matches[2]].url}\" alt=\"#{escaped}\" title=\"#{escaped}\"#{style}>" else escaped
 
             @makeHolder result
 
@@ -239,7 +251,7 @@ class Parser
         text = text.replace /\[((?:[^\]]|\\\]|\\\[)+?)\]\[((?:[^\]]|\\\]|\\\[)+?)\]/g, (matches...) =>
             escaped = @parseInline (@escapeBracket matches[1]), '', no, no
 
-            result = if @definitions[matches[2]]? then "<a href=\"#{@definitions[matches[2]]}\">#{escaped}</a>" else escaped
+            result = if @definitions[matches[2]]? then "<a href=\"#{@definitions[matches[2]].url}\">#{escaped}</a>" else escaped
 
             @makeHolder result
 
@@ -349,7 +361,7 @@ class Parser
                 if @isBlock 'html', tag
                     @setBlock key
                         .endBlock()
-                
+
                 continue
             else if @isBlock 'html'
                 @setBlock key
@@ -383,7 +395,10 @@ class Parser
 
                 # definition
                 when !!(matches = line.match /^\s*\[((?:[^\]]|\]|\[)+?)\]:\s*(.+)$/)
-                    @definitions[matches[1]] = @cleanUrl matches[2]
+                    url =
+                        url: @cleanUrl matches[2]
+                        extra: @parseExtra matches[2]
+                    @definitions[matches[1]] = url
                     @startBlock 'definition', key
                         .endBlock()
 
@@ -432,8 +447,8 @@ class Parser
                             aligns.push align
 
                         @setBlock key, [[head], aligns, head + 1]
-                        
-                
+
+
                 # single heading
                 when !!(matches = line.match /^(#+)(.*)$/)
                     num = Math.min matches[1].length, 6
@@ -565,7 +580,7 @@ class Parser
                 [lang, rel] = parts
                 lang = trim lang
                 rel = trim rel
-        
+
 
         lines = lines.slice 1, -1
             .map (line) ->
@@ -578,7 +593,7 @@ class Parser
             + (if !!rel then " rel=\"#{rel}\"" else '') + '>' \
             + (htmlspecialchars str) + '</code></pre>'
 
-    
+
     parsePre: (lines) ->
         lines = lines.map (line) ->
             htmlspecialchars line.substring 4
@@ -762,7 +777,7 @@ class Parser
 
     parseDefinition: -> ''
 
-    
+
     parseHtml: (lines, type) ->
         lines = lines.map (line) =>
             @parseInline line, if @specialWhiteList[type]? then @specialWhiteList[type] else ''
@@ -777,6 +792,15 @@ class Parser
             matches[1]
         else
             '#'
+
+
+    parseExtra: (url) ->
+        extra = null
+        if !!(matches = url.match /s=([\dA-Za-z.]*)(?:\*([\dA-Za-z.]*))/i)
+            extra = {}
+            extra.width = matches[1] if !!matches[1]
+            extra.height = matches[2] if !!matches[2]
+        extra
 
 
     escapeBracket: (str) ->
